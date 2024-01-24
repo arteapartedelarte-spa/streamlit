@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -135,3 +135,25 @@ def docstrings():
 
 
 docstrings()
+
+
+def my_func():
+    """my_func: this help block should be printed."""
+    pass
+
+
+my_func
+
+
+class MyClass:
+    """MyClass: this help block should be printed."""
+
+    def __init__(self):
+        """This should not be printed."""
+
+
+MyClass
+
+
+my_instance = MyClass()
+my_instance

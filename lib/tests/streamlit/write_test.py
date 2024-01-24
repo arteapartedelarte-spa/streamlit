@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,25 +14,28 @@
 
 """Streamlit Unit test."""
 
-from collections import namedtuple
-from unittest.mock import call, patch, Mock, PropertyMock
-
+import dataclasses
 import time
 import unittest
+from collections import namedtuple
+from unittest.mock import Mock, PropertyMock, call, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import streamlit as st
 from streamlit import type_util
+from streamlit.elements import write
 from streamlit.error_util import handle_uncaught_app_exception
 from streamlit.errors import StreamlitAPIException
+from streamlit.runtime.state import QueryParamsProxy, SessionStateProxy
 
 
 class StreamlitWriteTest(unittest.TestCase):
     """Test st.write.
 
-    Unit tests for https://docs.streamlit.io/en/latest/api/text.html#streamlit.write
+    Unit tests for https://docs.streamlit.io/library/api-reference/write-magic/st.write
 
     Because we're going to test st.markdown, st.pyplot, st.altair_chart
     later on, we don't have to test it in st.write In st.write, all we're
@@ -52,6 +55,20 @@ class StreamlitWriteTest(unittest.TestCase):
             p.assert_called_once_with(
                 "<strong>hello world</strong>", unsafe_allow_html=True
             )
+
+    def test_repr_html_no_html_tags_in_string(self):
+        """Test st.write with an object that defines _repr_html_ but does not have any
+        html tags in the returned string.
+        """
+
+        class FakeHTMLable(object):
+            def _repr_html_(self):
+                return "hello **world**"
+
+        with patch("streamlit.delta_generator.DeltaGenerator.markdown") as p:
+            st.write(FakeHTMLable())
+
+            p.assert_called_once_with("hello **world**", unsafe_allow_html=False)
 
     def test_string(self):
         """Test st.write with a string."""
@@ -167,6 +184,54 @@ class StreamlitWriteTest(unittest.TestCase):
 
             p.assert_called_once()
 
+    def test_session_state(self):
+        """Test st.write with st.session_state."""
+        with patch("streamlit.delta_generator.DeltaGenerator.json") as p:
+            st.write(SessionStateProxy())
+
+            p.assert_called_once()
+
+    def test_query_params(self):
+        """Test st.write with st.query_params."""
+        with patch("streamlit.delta_generator.DeltaGenerator.json") as p:
+            st.write(QueryParamsProxy())
+
+            p.assert_called_once()
+
+    def test_snowpark_dataframe_write(self):
+        """Test st.write with snowflake.snowpark.dataframe.DataFrame."""
+        # Import package inside the test so the test suite still runs even if you don't
+        # have this package.
+        from tests.streamlit.snowpark_mocks import DataFrame, Row
+
+        # SnowparkDataFrame should call streamlit.delta_generator.DeltaGenerator.dataframe
+        with patch("streamlit.delta_generator.DeltaGenerator.dataframe") as p:
+            st.write(DataFrame())
+            p.assert_called_once()
+
+        # SnowparkRow inside list should call streamlit.delta_generator.DeltaGenerator.dataframe
+        with patch("streamlit.delta_generator.DeltaGenerator.dataframe") as p:
+            st.write(
+                [
+                    Row(),
+                ]
+            )
+            p.assert_called_once()
+
+    def test_pyspark_dataframe_write(self):
+        """Test st.write with pyspark.sql.DataFrame."""
+        # Import package inside the test so the test suite still runs even if you don't
+        # have this package.
+        from tests.streamlit import pyspark_mocks
+
+        # PySpark DataFrame should call streamlit.delta_generator.DeltaGenerator.dataframe
+        with patch("streamlit.delta_generator.DeltaGenerator.dataframe") as p:
+            snowpark_dataframe = (
+                pyspark_mocks.create_pyspark_dataframe_with_mocked_personal_data()
+            )
+            st.write(snowpark_dataframe)
+            p.assert_called_once()
+
     @patch("streamlit.delta_generator.DeltaGenerator.markdown")
     @patch("streamlit.delta_generator.DeltaGenerator.json")
     def test_dict_and_string(self, mock_json, mock_markdown):
@@ -198,6 +263,60 @@ class StreamlitWriteTest(unittest.TestCase):
                 "`1 * 2 - 3 = 4 \\`ok\\` !`", unsafe_allow_html=False
             )
 
+    def test_class(self):
+        """Test st.write with a class."""
+
+        class SomeClass:
+            pass
+
+        with patch("streamlit.delta_generator.DeltaGenerator.help") as p:
+            st.write(SomeClass)
+
+            p.assert_called_once_with(SomeClass)
+
+        with patch("streamlit.delta_generator.DeltaGenerator.help") as p:
+            empty_df = pd.DataFrame()
+            st.write(type(empty_df))
+
+            p.assert_called_once_with(type(empty_df))
+
+    def test_obj_instance(self):
+        """Test st.write with an object instance that doesn't know how to str()."""
+
+        class SomeClass:
+            pass
+
+        my_instance = SomeClass()
+
+        with patch("streamlit.delta_generator.DeltaGenerator.help") as p:
+            st.write(my_instance)
+
+            p.assert_called_once_with(my_instance)
+
+    def test_dataclass_instance(self):
+        """Test st.write with a dataclass instance."""
+
+        @dataclasses.dataclass
+        class SomeClass:
+            pass
+
+        my_instance = SomeClass()
+
+        with patch("streamlit.delta_generator.DeltaGenerator.help") as p:
+            st.write(my_instance)
+
+            p.assert_called_once_with(my_instance)
+
+    # We use "looks like a memory address" as a test inside st.write, so here we're
+    # checking that that logic isn't broken.
+    def test_str_looking_like_mem_address(self):
+        """Test calling st.write on a string that looks like a memory address."""
+
+        with patch("streamlit.delta_generator.DeltaGenerator.markdown") as p:
+            st.write("<__main__.MyObj object at 0x13d2d0bb0>")
+
+            p.assert_called_once()
+
     def test_exception(self):
         """Test st.write that raises an exception."""
         # We patch streamlit.exception to observe it, but we also make sure
@@ -211,6 +330,15 @@ class StreamlitWriteTest(unittest.TestCase):
 
             with self.assertRaises(Exception):
                 st.write("some text")
+
+    def test_unknown_arguments(self):
+        """Test st.write that raises an exception."""
+        with self.assertLogs(write._LOGGER) as logs:
+            st.write("some text", unknown_keyword_arg=123)
+
+        self.assertIn(
+            'Invalid arguments were passed to "st.write" function.', logs.records[0].msg
+        )
 
     def test_spinner(self):
         """Test st.spinner."""

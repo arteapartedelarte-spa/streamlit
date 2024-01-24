@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-# Copyright 2018-2021 Streamlit Inc.
+
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +17,7 @@
 """Runs all the scripts in the examples folder (except this one)."""
 
 import os
-import sys
+
 import click
 
 # True means we run through all tests automatically.
@@ -27,7 +28,7 @@ EXAMPLE_DIR = "examples"
 
 # These are all the files we excliude
 EXCLUDED_FILENAMES = (
-    # Exclude mnist becuase it takes so long to run.
+    # Exclude mnist because it takes so long to run.
     "mnist-cnn.py",
     # Exclude caching because we special case it.
     "caching.py",

@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,49 +13,48 @@
 # limitations under the License.
 
 """Utility functions to use in our tests."""
-import threading
-import unittest
+
+import json
 from contextlib import contextmanager
-from typing import Any, Dict
-from unittest.mock import patch
+from typing import TYPE_CHECKING
 
 from streamlit import config
-from streamlit.report_queue import ReportQueue
-from streamlit.report_thread import ReportContext
-from streamlit.report_thread import add_report_ctx
-from streamlit.report_thread import get_report_ctx
-from streamlit.widgets import WidgetStateManager
-from streamlit.uploaded_file_manager import UploadedFileManager
+from streamlit.runtime.memory_uploaded_file_manager import MemoryUploadedFileManager
+from streamlit.runtime.scriptrunner import ScriptRunContext
+from streamlit.runtime.state import SafeSessionState, SessionState
+from tests.constants import SNOWFLAKE_CREDENTIAL_FILE
+
+if TYPE_CHECKING:
+    from snowflake.snowpark import Session
+
+# Reexport functions that were moved to main codebase
+from streamlit.testing.v1.util import (
+    build_mock_config_get_option as build_mock_config_get_option,
+)
+from streamlit.testing.v1.util import patch_config_options as patch_config_options
 
 
-@contextmanager
-def patch_config_options(config_overrides: Dict[str, Any]):
-    """A context manager that overrides config options. It can
-    also be used as a function decorator.
+def should_skip_pydantic_tests() -> bool:
+    try:
+        import pydantic
 
-    Examples:
-    >>> with patch_config_options({"server.headless": True}):
-    ...     assert(config.get_option("server.headless") is True)
-    ...     # Other test code that relies on these options
-
-    >>> @patch_config_options({"server.headless": True})
-    ... def test_my_thing():
-    ...   assert(config.get_option("server.headless") is True)
-    """
-    mock_get_option = build_mock_config_get_option(config_overrides)
-    with patch.object(config, "get_option", new=mock_get_option):
-        yield
+        return not pydantic.__version__.startswith("1.")
+    except ImportError:
+        return True
 
 
-def build_mock_config_get_option(overrides_dict):
-    orig_get_option = config.get_option
-
-    def mock_config_get_option(name):
-        if name in overrides_dict:
-            return overrides_dict[name]
-        return orig_get_option(name)
-
-    return mock_config_get_option
+def create_mock_script_run_ctx() -> ScriptRunContext:
+    """Create a ScriptRunContext for use in tests."""
+    return ScriptRunContext(
+        session_id="mock_session_id",
+        _enqueue=lambda msg: None,
+        query_string="mock_query_string",
+        session_state=SafeSessionState(SessionState(), lambda: None),
+        uploaded_file_mgr=MemoryUploadedFileManager("/mock/upload"),
+        main_script_path="",
+        page_script_hash="mock_page_script_hash",
+        user_info={"email": "mock@test.com"},
+    )
 
 
 def build_mock_config_is_manually_set(overrides_dict):
@@ -69,52 +68,47 @@ def build_mock_config_is_manually_set(overrides_dict):
     return mock_config_is_manually_set
 
 
-class DeltaGeneratorTestCase(unittest.TestCase):
-    def setUp(self, override_root=True):
-        self.report_queue = ReportQueue()
-        self.override_root = override_root
-        self.orig_report_ctx = None
+def normalize_md(txt: str) -> str:
+    """Replace newlines *inside paragraphs* with spaces.
 
-        if self.override_root:
-            self.orig_report_ctx = get_report_ctx()
-            add_report_ctx(
-                threading.current_thread(),
-                ReportContext(
-                    session_id="test session id",
-                    enqueue=self.report_queue.enqueue,
-                    query_string="",
-                    widgets=WidgetStateManager(),
-                    uploaded_file_mgr=UploadedFileManager(),
-                ),
-            )
+    Consecutive lines of text are considered part of the same paragraph
+    in Markdown. So this function joins those into a single line to make the
+    test robust to changes in text wrapping.
 
-    def tearDown(self):
-        self.clear_queue()
-        if self.override_root:
-            add_report_ctx(threading.current_thread(), self.orig_report_ctx)
+    NOTE: This function doesn't attempt to be 100% grammatically correct
+    Markdown! It's just supposed to be "correct enough" for tests to pass. For
+    example, when we guard "\n\n" from being converted, we really should be
+    guarding for RegEx("\n\n+") instead. But that doesn't matter for our tests.
+    """
+    # Two newlines in a row should NOT be replaced with a space.
+    txt = txt.replace("\n\n", "OMG_NEWLINE")
 
-    def get_message_from_queue(self, index=-1):
-        """Get a ForwardMsg proto from the queue, by index.
+    # Lists should NOT be replaced with a space.
+    txt = txt.replace("\n*", "OMG_STAR")
+    txt = txt.replace("\n-", "OMG_HYPHEN")
 
-        Returns
-        -------
-        ForwardMsg
-        """
-        return self.report_queue._queue[index]
+    # Links broken over two lines should not get an extra space.
+    txt = txt.replace("]\n(", "OMG_LINK")
 
-    def get_delta_from_queue(self, index=-1):
-        """Get a Delta proto from the queue, by index.
+    # Convert all remaining newlines into spaces.
+    txt = txt.replace("\n", " ")
 
-        Returns
-        -------
-        Delta
-        """
-        deltas = self.get_all_deltas_from_queue()
-        return deltas[index]
+    # Restore everything else.
+    txt = txt.replace("OMG_NEWLINE", "\n\n")
+    txt = txt.replace("OMG_STAR", "\n*")
+    txt = txt.replace("OMG_HYPHEN", "\n-")
+    txt = txt.replace("OMG_LINK", "](")
 
-    def get_all_deltas_from_queue(self):
-        """Return all the delta messages in our ReportQueue"""
-        return [msg.delta for msg in self.report_queue._queue if msg.HasField("delta")]
+    return txt.strip()
 
-    def clear_queue(self):
-        self.report_queue._clear()
+
+@contextmanager
+def create_snowpark_session() -> "Session":
+    from snowflake.snowpark import Session
+
+    credential = json.loads(SNOWFLAKE_CREDENTIAL_FILE.read_text())
+    session = Session.builder.configs(credential).create()
+    try:
+        yield session
+    finally:
+        session.close()

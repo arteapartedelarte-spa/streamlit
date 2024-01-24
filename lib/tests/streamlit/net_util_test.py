@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,6 +36,20 @@ class UtilTest(unittest.TestCase):
         with requests_mock.mock() as m:
             m.get(net_util._AWS_CHECK_IP, exc=requests.exceptions.ConnectTimeout)
             self.assertEqual(None, net_util.get_external_ip())
+
+    def test_get_external_ip_use_http_by_default(self):
+        with requests_mock.mock() as m:
+            m.get(net_util._AWS_CHECK_IP, text="1.2.3.4")
+            m.get(net_util._AWS_CHECK_IP_HTTPS, text="5.6.7.8")
+            self.assertEqual("1.2.3.4", net_util.get_external_ip())
+            self.assertEqual(m.call_count, 1)
+
+    def test_get_external_ip_https_if_http_fails(self):
+        with requests_mock.mock() as m:
+            m.get(net_util._AWS_CHECK_IP, exc=requests.exceptions.ConnectTimeout)
+            m.get(net_util._AWS_CHECK_IP_HTTPS, text="5.6.7.8")
+            self.assertEqual("5.6.7.8", net_util.get_external_ip())
+            self.assertEqual(m.call_count, 2)
 
     def test_get_external_ip_html(self):
         # This tests the case where the external URL returns a web page.

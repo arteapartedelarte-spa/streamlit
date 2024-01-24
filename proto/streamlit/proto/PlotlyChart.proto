@@ -1,20 +1,23 @@
-/**
- * Copyright 2018-2021 Streamlit Inc.
+/**!
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
+ */
 
 syntax = "proto3";
+
+option java_package = "com.snowflake.apps.streamlit";
+option java_outer_classname = "PlotlyChartProto";
 
 message PlotlyChart {
   oneof chart {
@@ -29,6 +32,9 @@ message PlotlyChart {
 
   // If True, will overwrite the chart width spec to fit to container.
   bool use_container_width = 5;
+
+  // override the properties with a theme. Currently, only "streamlit" or None are accepted.
+  string theme = 6;
 
   reserved 3, 4;
 }

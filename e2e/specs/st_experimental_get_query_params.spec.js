@@ -1,12 +1,11 @@
 /**
- * @license
- * Copyright 2018-2021 Streamlit Inc.
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,25 +16,31 @@
 
 describe("st.experimental_get_query_string", () => {
   beforeEach(() => {
-    cy.visit(
+    cy.loadApp(
       "http://localhost:3000/?" +
         "show_map=True&number_of_countries=2&selected=asia&selected=america"
     );
-    // Make the ribbon decoration line disappear
-    cy.get("[data-testid='stDecoration']").invoke("css", "display", "none");
+
+    cy.prepForElementSnapshots();
   });
 
   it("shows query string correctly", () => {
     cy.get(".element-container [data-testid='stMarkdownContainer']").should(
       "have.length",
-      1
+      2
     );
-    cy.contains(
+    cy.getIndexed(".element-container [data-testid='stMarkdownContainer']", 0).contains(
+      "Please replace st.experimental_get_query_params with st.query_params. " +
+      "st.experimental_get_query_params will be removed after 2024-04-11. " +
+      "Refer to our docs page for more information."
+    );
+
+    cy.getIndexed(".element-container [data-testid='stMarkdownContainer']", 1).contains(
       "Current query string is: {" +
-        "'show_map': ['True'], " +
-        "'number_of_countries': ['2'], " +
-        "'selected': ['asia', 'america']" +
-        "}"
+      "'show_map': ['True'], " +
+      "'number_of_countries': ['2'], " +
+      "'selected': ['asia', 'america']" +
+      "}"
     );
   });
 });

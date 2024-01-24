@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-# Copyright 2018-2021 Streamlit Inc.
+
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,12 +43,12 @@ Then we can go to alpha, rc1, rc2, etc. but eventually its
 0.15.3
 """
 import fileinput
-import logging
 import os
 import re
 import sys
 
 import packaging.version
+import semver
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -56,12 +57,19 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # These regex's are super greedy in that it actually matches everything
 # but the version number so we can throw any valid PEP440 version in
 # there.
-PYTHON = {
-    "lib/setup.py": r"(?P<pre>.*VERSION = \").*(?P<post>\"  # PEP-440$)",
-    "docs/troubleshooting/sanity-checks.md": r"(?P<pre>.*number printed is `).*(?P<post>`.$)",
-}
+PYTHON = {"lib/setup.py": r"(?P<pre>.*VERSION = \").*(?P<post>\"  # PEP-440$)"}
 
-NODE = {"frontend/package.json": r'(?P<pre>^  "version": ").*(?P<post>",$)'}
+# This regex captures the "version": field in a JSON-like structure
+# allowing for any amount of whitespace before the "version": field.
+NODE_ROOT = {"frontend/package.json": r'(?P<pre>^ \s*"version": ").*(?P<post>",$)'}
+NODE_APP = {"frontend/app/package.json": r'(?P<pre>^ \s*"version": ").*(?P<post>",$)'}
+NODE_LIB = {"frontend/lib/package.json": r'(?P<pre>^ \s*"version": ").*(?P<post>",$)'}
+
+# This regex captures the "@streamlit/lib": field in a JSON-like structure
+# allowing for any amount of whitespace before the "version": field.
+NODE_APP_ST_LIB = {
+    "frontend/app/package.json": r'(?P<pre>^ \s*"@streamlit/lib": ").*(?P<post>",$)'
+}
 
 
 def verify_pep440(version):
@@ -80,18 +88,20 @@ def verify_pep440(version):
         raise (e)
 
 
-def update_files(data, python=True):
-    """Update files with new version number."""
+def verify_semver(version):
+    """Verify if version is compliant with semantic versioning.
 
-    if len(sys.argv) != 2:
-        e = Exception('Specify PEP440 version: "%s 1.2.3"' % sys.argv[0])
+    https://semver.org/
+    """
+
+    try:
+        return str(semver.VersionInfo.parse(version))
+    except ValueError as e:
         raise (e)
 
-    version = verify_pep440(sys.argv[1])
 
-    # Use normal sem versions for non python things ie node.
-    if not python:
-        version = version.base_version
+def update_files(data, version):
+    """Update files with new version number."""
 
     for filename, regex in data.items():
         filename = os.path.join(BASE_DIR, filename)
@@ -109,8 +119,32 @@ def update_files(data, python=True):
 def main():
     """Run main loop."""
 
-    update_files(PYTHON)
-    update_files(NODE, python=False)
+    if len(sys.argv) != 2:
+        e = Exception(
+            'Specify semvver version as an argument, e.g.: "%s 1.2.3"' % sys.argv[0]
+        )
+        raise (e)
+
+    # We need two flavors of the version - one that's semver-compliant for Node, one that's
+    # PEP440-compliant for Python. We allow for the incoming version to be either semver-compliant
+    # PEP440-compliant.
+    # - `verify_pep440` automatically converts semver to PEP440-compliant
+    pep440_version = verify_pep440(sys.argv[1])
+
+    # - Attempt to convert to semver-compliant. If a failure occurs, manually attempt to convert.
+    semver_version = None
+    try:
+        semver_version = verify_semver(sys.argv[1])
+    except ValueError:
+        semver_version = verify_semver(
+            sys.argv[1].replace("rc", "-rc.").replace(".dev", "-dev")
+        )
+
+    update_files(PYTHON, pep440_version)
+    update_files(NODE_ROOT, semver_version)
+    update_files(NODE_APP, semver_version)
+    update_files(NODE_LIB, semver_version)
+    update_files(NODE_APP_ST_LIB, semver_version)
 
 
 if __name__ == "__main__":

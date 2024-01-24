@@ -1,12 +1,11 @@
 /**
- * @license
- * Copyright 2018-2021 Streamlit Inc.
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,7 +16,7 @@
 
 describe("st.pyplot", () => {
   before(() => {
-    cy.visit("http://localhost:3000/");
+    cy.loadApp("http://localhost:3000/");
   });
 
   it("displays a pyplot figure", () => {
@@ -27,19 +26,14 @@ describe("st.pyplot", () => {
   });
 
   it("clears the figure on rerun", () => {
-    // Rerun the script
-    cy.get(".stApp [data-testid='stDecoration']").trigger("keypress", {
-      keyCode: 82, // "r"
-      which: 82 // "r"
-    });
+    cy.rerunScript();
 
     // Wait for 'data-stale' attr to go away, so the snapshot looks right.
     cy.get(".element-container")
       .should("have.attr", "data-stale", "false")
       .invoke("css", "opacity", "1");
 
-    // Make the ribbon decoration line disappear
-    cy.get("[data-testid='stDecoration']").invoke("css", "display", "none");
+    cy.prepForElementSnapshots();
 
     cy.get("[data-testid='stImage'] > img")
       .first()
@@ -55,10 +49,20 @@ describe("st.pyplot", () => {
   });
 
   it("hides deprecation warning", () => {
-    cy.get("[data-testid='stImage']")
-      .eq(1)
+    cy.getIndexed("[data-testid='stImage']", 1)
       .closest(".element-container")
       .prev()
       .should("not.contain", "PyplotGlobalUseWarning");
   });
+
+  it("use_container_width=False should display a smaller image", () => {
+    // use_container_width=True, so we have a canvas width
+    cy.getIndexed("[data-testid='stImage'] > img", 2)
+      .invoke('outerWidth').should('be.eq', 1200);
+
+    // use_container_width=False, so we have a smaller image
+    cy.getIndexed("[data-testid='stImage'] > img", 3)
+      .invoke('outerWidth').should('be.eq', 342);
+  });
+
 });

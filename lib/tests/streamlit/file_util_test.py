@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,16 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch, mock_open, MagicMock
 import errno
 import os
-import pytest
 import unittest
+from unittest.mock import MagicMock, mock_open, patch
 
-from streamlit import env_util
-from streamlit import file_util
-from streamlit import util
+import pytest
 
+from streamlit import file_util, util
 
 FILENAME = "/some/cache/file"
 mock_get_path = MagicMock(return_value=FILENAME)
@@ -58,7 +56,7 @@ class FileUtilTest(unittest.TestCase):
         self.os_stat.return_value.st_size = 0
         with pytest.raises(util.Error) as e:
             with file_util.streamlit_read(FILENAME) as input:
-                data = input.read()
+                input.read()
         self.assertEqual(str(e.value), 'Read zero byte file: "/some/cache/file"')
 
     @patch("streamlit.file_util.get_streamlit_file_path", mock_get_path)
@@ -106,6 +104,25 @@ class FileUtilTest(unittest.TestCase):
             expected,
             file_util.get_project_streamlit_file_path("some", "random", "file"),
         )
+
+    def test_get_app_static_dir(self):
+        self.assertEqual(
+            file_util.get_app_static_dir("/some_path/to/app/myapp.py"),
+            "/some_path/to/app/static",
+        )
+
+    @patch("os.path.getsize", MagicMock(return_value=42))
+    @patch(
+        "os.walk",
+        MagicMock(
+            return_value=[
+                ("dir1", [], ["file1", "file2", "file3"]),
+                ("dir2", [], ["file4", "file5"]),
+            ]
+        ),
+    )
+    def test_get_directory_size(self):
+        self.assertEqual(file_util.get_directory_size("the_dir"), 42 * 5)
 
 
 class FileIsInFolderTest(unittest.TestCase):

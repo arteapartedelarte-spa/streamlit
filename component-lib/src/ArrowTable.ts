@@ -1,12 +1,11 @@
 /**
- * @license
- * Copyright 2018-2021 Streamlit Inc.
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,9 +14,21 @@
  * limitations under the License.
  */
 
-import { Table, Type } from "apache-arrow";
+import { tableToIPC, tableFromIPC, Table, Type, Vector, StructRow } from "apache-arrow";
 
-type CellType = "blank" | "index" | "columns" | "data";
+export type CellType = "blank" | "index" | "columns" | "data";
+
+/** Data types used by ArrowJS. */
+export type DataType =
+  | null
+  | boolean
+  | number
+  | string
+  | Date // datetime
+  | Int32Array // int
+  | Uint8Array // bytes
+  | Vector // arrays
+  | StructRow; // interval
 
 export interface ArrowDataframeProto {
   data: ArrowTableProto;
@@ -32,14 +43,14 @@ export interface ArrowTableProto {
   styler?: Styler;
 }
 
-interface Cell {
+export interface Cell {
   classNames: string;
-  content: string;
+  content: DataType;
   id?: string;
   type: CellType;
 }
 
-interface Styler {
+export interface Styler {
   caption?: string;
   displayValuesTable: Table;
   styles?: string;
@@ -58,13 +69,13 @@ export class ArrowTable {
     columnsBuffer: Uint8Array,
     styler?: any
   ) {
-    this.dataTable = Table.from(dataBuffer);
-    this.indexTable = Table.from(indexBuffer);
-    this.columnsTable = Table.from(columnsBuffer);
+    this.dataTable = tableFromIPC(dataBuffer);
+    this.indexTable = tableFromIPC(indexBuffer);
+    this.columnsTable = tableFromIPC(columnsBuffer);
     this.styler = styler
       ? {
           caption: styler.caption,
-          displayValuesTable: Table.from(styler.displayValues),
+          displayValuesTable: tableFromIPC(styler.displayValues),
           styles: styler.styles,
           uuid: styler.uuid
         }
@@ -72,11 +83,11 @@ export class ArrowTable {
   }
 
   get rows(): number {
-    return this.indexTable.length + this.columnsTable.numCols;
+    return this.indexTable.numRows + this.columnsTable.numCols;
   }
 
   get columns(): number {
-    return this.indexTable.numCols + this.columnsTable.length;
+    return this.indexTable.numCols + this.columnsTable.numRows;
   }
 
   get headerRows(): number {
@@ -88,7 +99,7 @@ export class ArrowTable {
   }
 
   get dataRows(): number {
-    return this.dataTable.length;
+    return this.dataTable.numRows;
   }
 
   get dataColumns(): number {
@@ -194,8 +205,8 @@ export class ArrowTable {
     table: Table,
     rowIndex: number,
     columnIndex: number
-  ): any => {
-    const column = table.getColumnAt(columnIndex);
+  ): DataType => {
+    const column = table.getChildAt(columnIndex);
     if (column === null) {
       return "";
     }
@@ -216,9 +227,9 @@ export class ArrowTable {
    */
   public serialize(): ArrowTableProto {
     return {
-      data: this.dataTable.serialize(),
-      index: this.indexTable.serialize(),
-      columns: this.columnsTable.serialize()
+      data: tableToIPC(this.dataTable),
+      index: tableToIPC(this.indexTable),
+      columns: tableToIPC(this.columnsTable )
     };
   }
 

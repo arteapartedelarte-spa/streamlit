@@ -1,0 +1,69 @@
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{% set package_data = load_setup_py_data() %}
+
+
+package:
+  name: {{ package_data.get('name')|lower }}
+  version: {{ package_data.get('version') }}
+
+source:
+  path: ..
+
+build:
+  number: {{ environ.get('CONDA_BUILD_NUMBER', 0)|int }}
+  noarch: python
+  script: python -m pip install . -vv
+  entry_points:
+    {% for ep in package_data.get('entry_points').get('console_scripts') %}
+      - {{ ep }}
+    {% endfor %}
+  script_env:
+   - GIT_HASH
+   - SNOWPARK_CONDA_BUILD
+
+requirements:
+  host:
+    - pip
+    - python {{ package_data.get('python_requires') }}
+  run:
+    {% for req in package_data.get('install_requires', []) %}
+      # 2022.07.01 - temporarily set protobuf's lower bound to 3.11 to work
+      # around a conda resolution issue
+      {% if 'protobuf' in req %}
+        - protobuf >=3.11, <4
+      # Conda doesn't support the `platform_system` conditional that pip does.
+      # We may need to figure out how to avoid installing watchdog on MacOS
+      # by default in our conda distribution due to this.
+      {% elif 'watchdog' in req %}
+        - watchdog
+      {% else %}
+        - {{ req }}
+      {% endif %}
+    {% endfor %}
+
+test:
+  imports:
+    - streamlit
+  commands:
+    - pip check
+  requires:
+    - pip
+
+about:
+  home: https://streamlit.io
+  summary: A faster way to build and share data apps
+  license: Apache-2.0
+  license_file: LICENSE

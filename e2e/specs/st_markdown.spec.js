@@ -1,12 +1,11 @@
 /**
- * @license
- * Copyright 2018-2021 Streamlit Inc.
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,24 +16,23 @@
 
 describe("st.markdown", () => {
   before(() => {
-    cy.visit("http://localhost:3000/");
+    cy.loadApp("http://localhost:3000/");
 
-    // Make the ribbon decoration line disappear
-    cy.get("[data-testid='stDecoration']").invoke("css", "display", "none");
+    cy.prepForElementSnapshots();
   });
 
   it("displays correct number of elements", () => {
-    cy.get(".element-container .stMarkdown").should("have.length", 13);
+    cy.get(".element-container .stMarkdown").should("have.length", 20);
   });
 
   it("displays markdown", () => {
-    cy.get(".element-container .stMarkdown").then(els => {
+    cy.get(".element-container .stMarkdown").then((els) => {
       expect(els[0].textContent).to.eq("This markdown is awesome! 😎");
       expect(els[1].textContent).to.eq("This <b>HTML tag</b> is escaped!");
       expect(els[2].textContent).to.eq("This HTML tag is not escaped!");
       expect(els[3].textContent).to.eq("[text]");
       expect(els[4].textContent).to.eq("link");
-      expect(els[5].textContent).to.eq("");
+      expect(els[5].textContent).to.eq("[][]");
       expect(els[6].textContent).to.eq("Inline math with KaTeX\\KaTeXKATE​X");
       expect(els[7].textContent).to.eq(
         "ax2+bx+c=0ax^2 + bx + c = 0ax2+bx+c=0"
@@ -44,26 +42,16 @@ describe("st.markdown", () => {
       expect(els[10].textContent).to.eq("Some header 3");
       expect(els[11].textContent).to.eq("Col1Col2SomeData");
 
-      cy.wrap(els[3])
-        .find("a")
-        .should("not.exist");
-      cy.wrap(els[4])
-        .find("a")
-        .should("have.attr", "href");
+      cy.wrap(els[3]).find("a").should("not.exist");
+      cy.wrap(els[4]).find("a").should("have.attr", "href");
     });
   });
 
   it("displays headers with anchors", () => {
-    cy.get(".element-container .stMarkdown").then(els => {
-      cy.wrap(els[8])
-        .find("h1")
-        .should("have.attr", "id", "some-header-1");
-      cy.wrap(els[9])
-        .find("h2")
-        .should("have.attr", "id", "some-header-2");
-      cy.wrap(els[10])
-        .find("h3")
-        .should("have.attr", "id", "some-header-3");
+    cy.get(".element-container .stMarkdown").then((els) => {
+      cy.wrap(els[8]).find("h1").should("have.attr", "id", "some-header-1");
+      cy.wrap(els[9]).find("h2").should("have.attr", "id", "some-header-2");
+      cy.wrap(els[10]).find("h3").should("have.attr", "id", "some-header-3");
     });
   });
 
@@ -88,8 +76,14 @@ describe("st.markdown", () => {
   });
 
   it("displays long headers above other elements correctly", () => {
-    cy.get("[data-testid='stBlock']").matchThemedSnapshots(
-      "long-markdown-header-above-table"
-    );
+    cy.get("[data-testid='stVerticalBlock'] [data-testid='stVerticalBlock']")
+      .eq(0)
+      .matchThemedSnapshots("long-markdown-header-above-table");
+  });
+
+  it("displays headings and markdown when called separately or together", () => {
+    cy.get("[data-testid='stVerticalBlock'] [data-testid='stVerticalBlock']")
+      .eq(1)
+      .matchThemedSnapshots("heading-and-markdown-combinations");
   });
 });

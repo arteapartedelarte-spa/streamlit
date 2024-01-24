@@ -1,12 +1,11 @@
 /**
- * @license
- * Copyright 2018-2021 Streamlit Inc.
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,10 +20,9 @@
  */
 describe("disable widgets", () => {
   beforeEach(() => {
-    cy.visit("http://localhost:3000/");
+    cy.loadApp("http://localhost:3000/");
 
-    // Make the ribbon decoration line disappear
-    cy.get("[data-testid='stDecoration']").invoke("css", "display", "none");
+    cy.prepForElementSnapshots();
   });
 
   it("disconnects the client and disables widgets", () => {
@@ -32,8 +30,11 @@ describe("disable widgets", () => {
 
     cy.get(".stMarkdown").should("have.text", "Value 1: 25");
 
-    cy.window().then(win => {
-      win.streamlitDebug.closeConnection();
+    cy.window().then((win) => {
+      // We shut down the runtime entirely rather than just close the websocket
+      // connection as the client will immediately reconnect if we just do the
+      // latter.
+      win.streamlitDebug.shutdownRuntime();
 
       cy.get(".stButton button").should("be.disabled");
 
@@ -52,10 +53,7 @@ describe("disable widgets", () => {
       cy.get(".stTimeInput input").should("be.disabled");
 
       // slider doesn't have a `disabled` attribute
-      cy.get('.stSlider [role="slider"]')
-        .first()
-        .parent()
-        .click();
+      cy.get('.stSlider [role="slider"]').first().parent().click();
 
       cy.get(".stMarkdown").should("have.text", "Value 1: 25");
 

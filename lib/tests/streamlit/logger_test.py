@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,14 +17,12 @@
 import logging
 import unittest
 from collections import OrderedDict
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 from parameterized import parameterized
 
-from streamlit import logger
-from streamlit import config
-
+from streamlit import config, logger
 
 DUMMY_CONFIG_OPTIONS = OrderedDict()
 
@@ -58,7 +56,7 @@ class LoggerTest(unittest.TestCase):
         ]
         for k in data:
             logger.set_log_level(k)
-            self.assertEqual(k, logging.getLogger().getEffectiveLevel())
+            self.assertEqual(k, logging.getLogger("streamlit").getEffectiveLevel())
 
     def test_set_log_level_error(self):
         """Test streamlit.logger.set_log_level."""
@@ -113,7 +111,7 @@ class LoggerTest(unittest.TestCase):
     def test_init_tornado_logs(self):
         """Test streamlit.logger.init_tornado_logs."""
         logger.init_tornado_logs()
-        loggers = [x for x in logger.LOGGERS.keys() if "tornado." in x]
+        loggers = [x for x in logger._loggers.keys() if "tornado." in x]
         truth = ["tornado.access", "tornado.application", "tornado.general"]
         self.assertEqual(sorted(truth), sorted(loggers))
 

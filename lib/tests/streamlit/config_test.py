@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,18 +13,18 @@
 # limitations under the License.
 
 """Config System Unittest."""
-from unittest.mock import call, MagicMock, mock_open, patch
 import copy
 import os
 import textwrap
 import unittest
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 from parameterized import parameterized
 
-from streamlit import config
-from streamlit import env_util
+from streamlit import config, env_util
 from streamlit.config_option import ConfigOption
+from streamlit.errors import StreamlitAPIException
 
 SECTION_DESCRIPTIONS = copy.deepcopy(config._section_descriptions)
 CONFIG_OPTIONS = copy.deepcopy(config._config_options)
@@ -39,6 +39,7 @@ class ConfigTest(unittest.TestCase):
                 config, "_section_descriptions", new=copy.deepcopy(SECTION_DESCRIPTIONS)
             ),
             patch.object(config, "_config_options", new=copy.deepcopy(CONFIG_OPTIONS)),
+            patch.dict(os.environ),
         ]
 
         for p in self.patches:
@@ -48,11 +49,28 @@ class ConfigTest(unittest.TestCase):
         for p in self.patches:
             p.stop()
 
-        try:
-            del os.environ["TEST_ENV_VAR"]
-        except Exception:
-            pass
         config._delete_option("_test.tomlTest")
+
+    def test_set_user_option_scriptable(self):
+        """Test that scriptable options can be set from API."""
+        # This is set in lib/tests/conftest.py to off
+        self.assertEqual(True, config.get_option("client.showErrorDetails"))
+
+        try:
+            # client.showErrorDetails can be set after run starts.
+            config.set_user_option("client.showErrorDetails", False)
+            self.assertEqual(False, config.get_option("client.showErrorDetails"))
+        finally:
+            # Restore original value
+            config.set_user_option("client.showErrorDetails", True)
+
+    def test_set_user_option_unscriptable(self):
+        """Test that unscriptable options cannot be set with st.set_option."""
+        # This is set in lib/tests/conftest.py to off
+        self.assertEqual(True, config.get_option("server.enableCORS"))
+
+        with self.assertRaises(StreamlitAPIException):
+            config.set_user_option("server.enableCORS", False)
 
     def test_simple_config_option(self):
         """Test creating a simple (constant) config option."""
@@ -68,9 +86,11 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config_option.description, "Simple config option.")
         self.assertEqual(config_option.where_defined, ConfigOption.DEFAULT_DEFINITION)
         self.assertEqual(config_option.value, 12345)
+        self.assertEqual(config_option.env_var, "STREAMLIT__TEST_SIMPLE_PARAM")
 
     def test_complex_config_option(self):
         """Test setting a complex (functional) config option."""
+
         # Create the config option.
         @ConfigOption("_test.complexParam")
         def config_option():
@@ -84,11 +104,12 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config_option.description, "Complex config option.")
         self.assertEqual(config_option.where_defined, ConfigOption.DEFAULT_DEFINITION)
         self.assertEqual(config_option.value, 12345)
+        self.assertEqual(config_option.env_var, "STREAMLIT__TEST_COMPLEX_PARAM")
 
     def test_complex_config_option_must_have_doc_strings(self):
         """Test that complex config options use funcs with doc stringsself.
 
-        This is becuase the doc string forms the option's description.
+        This is because the doc string forms the option's description.
         """
         with self.assertRaises(AssertionError):
 
@@ -244,6 +265,32 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.get_option("_test.tomlTest"), DESIRED_VAL)
         self.assertEqual(config.get_where_defined("_test.tomlTest"), DUMMY_DEFINITION)
 
+    def test_parsing_sensitive_options(self):
+        """Test config._update_config_with_sensitive_env_var()."""
+        # Some useful variables.
+        DUMMY_VAL_1, DUMMY_VAL_2 = "Adam", "Malysz"
+
+        # Create a dummy default option.
+        config._create_option(
+            "_test.sensitiveTest",
+            description="This sensitive option tests the config parser.",
+            default_val=DUMMY_VAL_1,
+            sensitive=True,
+        )
+        config.get_config_options(force_reparse=True)
+        self.assertEqual(config.get_option("_test.sensitiveTest"), DUMMY_VAL_1)
+        self.assertEqual(
+            config.get_where_defined("_test.sensitiveTest"),
+            ConfigOption.DEFAULT_DEFINITION,
+        )
+        with patch.dict(os.environ, STREAMLIT__TEST_SENSITIVE_TEST=DUMMY_VAL_2):
+            config.get_config_options(force_reparse=True)
+            self.assertEqual(config.get_option("_test.sensitiveTest"), DUMMY_VAL_2)
+            self.assertEqual(
+                config.get_where_defined("_test.sensitiveTest"),
+                config._DEFINED_BY_ENV_VAR,
+            )
+
     def test_delete_option(self):
         # Create a dummy default option.
         config._create_option(
@@ -274,10 +321,11 @@ class ConfigTest(unittest.TestCase):
                 "deprecation",
                 "global",
                 "logger",
+                "magic",
                 "mapbox",
                 "runner",
-                "s3",
                 "server",
+                "ui",
             ]
         )
         keys = sorted(list(config._section_descriptions.keys()))
@@ -292,6 +340,8 @@ class ConfigTest(unittest.TestCase):
                 "client.caching",
                 "client.displayEnabled",
                 "client.showErrorDetails",
+                "client.showSidebarNavigation",
+                "client.toolbarMode",
                 "theme.base",
                 "theme.primaryColor",
                 "theme.backgroundColor",
@@ -303,42 +353,48 @@ class ConfigTest(unittest.TestCase):
                 "deprecation.showPyplotGlobalUse",
                 "global.developmentMode",
                 "global.disableWatchdogWarning",
+                "global.disableWidgetStateDuplicationWarning",
                 "global.logLevel",
                 "global.maxCachedMessageAge",
                 "global.minCachedMessageSize",
-                "global.metrics",
-                "global.sharingMode",
                 "global.showWarningOnDirectExecution",
+                "global.storeCachedForwardMessagesInMemory",
                 "global.suppressDeprecationWarnings",
                 "global.unitTest",
+                "global.dataFrameSerialization",
+                "logger.enableRich",
                 "logger.level",
                 "logger.messageFormat",
+                "runner.enforceSerializableSessionState",
                 "runner.magicEnabled",
                 "runner.installTracer",
                 "runner.fixMatplotlib",
                 "runner.postScriptGC",
+                "runner.fastReruns",
+                "runner.enumCoercion",
+                "magic.displayRootDocString",
+                "magic.displayLastExprIfNoSemicolon",
                 "mapbox.token",
-                "s3.accessKeyId",
-                "s3.bucket",
-                "s3.keyPrefix",
-                "s3.profile",
-                "s3.region",
-                "s3.secretAccessKey",
-                "s3.url",
                 "server.baseUrlPath",
                 "server.enableCORS",
                 "server.cookieSecret",
+                "server.scriptHealthCheckEnabled",
                 "server.enableWebsocketCompression",
                 "server.enableXsrfProtection",
                 "server.fileWatcherType",
                 "server.folderWatchBlacklist",
                 "server.headless",
-                "server.liveSave",
                 "server.address",
                 "server.allowRunOnSave",
                 "server.port",
                 "server.runOnSave",
                 "server.maxUploadSize",
+                "server.maxMessageSize",
+                "server.enableStaticServing",
+                "server.sslCertFile",
+                "server.sslKeyFile",
+                "ui.hideTopBar",
+                "ui.hideSidebarNav",
             ]
         )
         keys = sorted(config._config_options.keys())
@@ -372,47 +428,6 @@ class ConfigTest(unittest.TestCase):
             "browser.serverPort does not work when global.developmentMode is true.",
         )
 
-    def test_check_conflicts_s3_sharing_mode(self):
-        with pytest.raises(AssertionError) as e:
-            config._set_option("global.sharingMode", "s3", "test")
-            config._set_option("s3.bucket", None, "<default>")
-            config._check_conflicts()
-        self.assertEqual(
-            str(e.value),
-            'When global.sharingMode is set to "s3", s3.bucket must also be set',
-        )
-
-    def test_check_conflicts_s3_credentials(self):
-        with pytest.raises(AssertionError) as e:
-            config._set_option("global.sharingMode", "s3", "test")
-            config._set_option("s3.bucket", "some.bucket", "test")
-            config._set_option("s3.accessKeyId", "some.key", "test")
-            config._set_option("s3.secretAccessKey", None, "<default>")
-            config._check_conflicts()
-        self.assertEqual(
-            str(e.value),
-            "In config.toml, s3.accessKeyId and s3.secretAccessKey must either both be set or both be unset.",
-        )
-
-    def test_check_conflicts_s3_absolute_url(self):
-        """Test that non-absolute s3.url values get made absolute"""
-        config._set_option("global.sharingMode", "s3", "test")
-        config._set_option("s3.bucket", "some.bucket", "test")
-        config._set_option("s3.accessKeyId", "some.key", "test")
-        config._set_option("s3.secretAccessKey", "some.key", "test")
-
-        # This absolute URL should *not* be modified in check_conflicts:
-        absolute_url = "https://absolute.url"
-        config._set_option("s3.url", absolute_url, "test")
-        config._check_conflicts()
-        self.assertEqual(absolute_url, config.get_option("s3.url"))
-
-        # This non-absolute URL *should* be modified with a '//' prefix:
-        relative_url = "relative.url"
-        config._set_option("s3.url", relative_url, "test")
-        config._check_conflicts()
-        self.assertEqual("//" + relative_url, config.get_option("s3.url"))
-
     def test_maybe_convert_to_number(self):
         self.assertEqual(1234, config._maybe_convert_to_number("1234"))
         self.assertEqual(1234.5678, config._maybe_convert_to_number("1234.5678"))
@@ -426,49 +441,53 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(1234, config._maybe_read_env_variable("env:RANDOM_TEST"))
 
     def test_update_config_with_toml(self):
-        self.assertEqual(True, config.get_option("client.caching"))
+        self.assertEqual(True, config.get_option("client.showErrorDetails"))
         toml = textwrap.dedent(
             """
            [client]
-           caching = false
+           showErrorDetails = false
         """
         )
         config._update_config_with_toml(toml, "test")
-        self.assertEqual(False, config.get_option("client.caching"))
+        self.assertEqual(False, config.get_option("client.showErrorDetails"))
 
     def test_set_option(self):
-        with pytest.raises(AssertionError) as e:
+        with self.assertLogs(logger="streamlit.config", level="WARNING") as cm:
             config._set_option("not.defined", "no.value", "test")
-        self.assertEqual(str(e.value), 'Key "not.defined" is not defined.')
+        # cm.output is a list of messages and there shouldn't be any other messages besides one created by this test
+        self.assertIn(
+            '"not.defined" is not a valid config option. If you previously had this config option set, it may have been removed.',
+            cm.output[0],
+        )
 
-        config._set_option("client.caching", "test", "test")
-        self.assertEqual("test", config.get_option("client.caching"))
+        config._set_option("browser.gatherUsageStats", "test", "test")
+        self.assertEqual("test", config.get_option("browser.gatherUsageStats"))
 
     def test_is_manually_set(self):
-        config._set_option("s3.bucket", "some.bucket", "test")
-        self.assertEqual(True, config.is_manually_set("s3.bucket"))
+        config._set_option("browser.serverAddress", "some.bucket", "test")
+        self.assertEqual(True, config.is_manually_set("browser.serverAddress"))
 
-        config._set_option("s3.bucket", "some.bucket", "<default>")
-        self.assertEqual(False, config.is_manually_set("s3.bucket"))
+        config._set_option("browser.serverAddress", "some.bucket", "<default>")
+        self.assertEqual(False, config.is_manually_set("browser.serverAddress"))
 
     def test_is_unset(self):
-        config._set_option("s3.bucket", "some.bucket", "test")
-        self.assertEqual(False, config._is_unset("s3.bucket"))
+        config._set_option("browser.serverAddress", "some.bucket", "test")
+        self.assertEqual(False, config._is_unset("browser.serverAddress"))
 
-        config._set_option("s3.bucket", "some.bucket", "<default>")
-        self.assertEqual(True, config._is_unset("s3.bucket"))
+        config._set_option("browser.serverAddress", "some.bucket", "<default>")
+        self.assertEqual(True, config._is_unset("browser.serverAddress"))
 
     def test_get_where_defined(self):
-        config._set_option("s3.bucket", "some.bucket", "test")
-        self.assertEqual("test", config.get_where_defined("s3.bucket"))
+        config._set_option("browser.serverAddress", "some.bucket", "test")
+        self.assertEqual("test", config.get_where_defined("browser.serverAddress"))
 
         with pytest.raises(RuntimeError) as e:
             config.get_where_defined("doesnt.exist")
         self.assertEqual(str(e.value), 'Config key "doesnt.exist" not defined.')
 
     def test_get_option(self):
-        config._set_option("s3.bucket", "some.bucket", "test")
-        self.assertEqual("some.bucket", config.get_option("s3.bucket"))
+        config._set_option("browser.serverAddress", "some.bucket", "test")
+        self.assertEqual("some.bucket", config.get_option("browser.serverAddress"))
 
         with pytest.raises(RuntimeError) as e:
             config.get_option("doesnt.exist")
@@ -488,26 +507,15 @@ class ConfigTest(unittest.TestCase):
         }
         self.assertEqual(config.get_options_for_section("theme"), expected)
 
-    def test_s3(self):
-        self.assertEqual(None, config.get_option("s3.secretAccessKey"))
-        self.assertEqual(None, config.get_option("s3.accessKeyId"))
-        self.assertEqual(None, config.get_option("s3.url"))
-        self.assertEqual(None, config.get_option("s3.bucket"))
-
     def test_browser_server_port(self):
         # developmentMode must be False for server.port to be modified
         config.set_option("global.developmentMode", False)
         config.set_option("server.port", 1234)
         self.assertEqual(1234, config.get_option("browser.serverPort"))
 
-    def test_server_headless_via_liveSave(self):
-        config.set_option("server.liveSave", True)
-        self.assertEqual(True, config.get_option("server.headless"))
-
     def test_server_headless_via_atom_plugin(self):
         os.environ["IS_RUNNING_IN_STREAMLIT_EDITOR_PLUGIN"] = "True"
 
-        config.set_option("server.liveSave", False)
         self.assertEqual(True, config.get_option("server.headless"))
 
         del os.environ["IS_RUNNING_IN_STREAMLIT_EDITOR_PLUGIN"]
@@ -599,15 +607,15 @@ class ConfigLoadingTest(unittest.TestCase):
             path_exists.return_value = False
             config.get_config_options()
 
-            self.assertEqual(True, config.get_option("client.caching"))
-            self.assertIsNone(config.get_option("s3.bucket"))
+            self.assertEqual(True, config.get_option("browser.gatherUsageStats"))
+            self.assertIsNone(config.get_option("theme.font"))
 
     def test_load_global_config(self):
         """Test that ~/.streamlit/config.toml is read."""
         global_config = """
-        [s3]
-        bucket = "global_bucket"
-        url = "global_url"
+        [theme]
+        base = "dark"
+        font = "sans serif"
         """
         global_config_path = "/mock/home/folder/.streamlit/config.toml"
 
@@ -621,9 +629,8 @@ class ConfigLoadingTest(unittest.TestCase):
         with open_patch, makedirs_patch, pathexists_patch:
             config.get_config_options()
 
-            self.assertEqual("global_bucket", config.get_option("s3.bucket"))
-            self.assertEqual("global_url", config.get_option("s3.url"))
-            self.assertIsNone(config.get_option("s3.accessKeyId"))
+            self.assertEqual("sans serif", config.get_option("theme.font"))
+            self.assertIsNone(config.get_option("theme.textColor"))
 
     def test_load_local_config(self):
         """Test that $CWD/.streamlit/config.toml is read, even
@@ -631,9 +638,9 @@ class ConfigLoadingTest(unittest.TestCase):
         """
 
         local_config = """
-        [s3]
-        bucket = "local_bucket"
-        accessKeyId = "local_accessKeyId"
+        [theme]
+        base = "light"
+        textColor = "#FFFFFF"
         """
 
         local_config_path = os.path.join(os.getcwd(), ".streamlit/config.toml")
@@ -648,9 +655,8 @@ class ConfigLoadingTest(unittest.TestCase):
         with open_patch, makedirs_patch, pathexists_patch:
             config.get_config_options()
 
-            self.assertEqual("local_bucket", config.get_option("s3.bucket"))
-            self.assertEqual("local_accessKeyId", config.get_option("s3.accessKeyId"))
-            self.assertIsNone(config.get_option("s3.url"))
+            self.assertEqual("#FFFFFF", config.get_option("theme.textColor"))
+            self.assertIsNone(config.get_option("theme.font"))
 
     def test_load_global_local_config(self):
         """Test that $CWD/.streamlit/config.toml gets overlaid on
@@ -658,15 +664,15 @@ class ConfigLoadingTest(unittest.TestCase):
         """
 
         global_config = """
-        [s3]
-        bucket = "global_bucket"
-        url = "global_url"
+        [theme]
+        base = "dark"
+        font = "sans serif"
         """
 
         local_config = """
-        [s3]
-        bucket = "local_bucket"
-        accessKeyId = "local_accessKeyId"
+        [theme]
+        base = "light"
+        textColor = "#FFFFFF"
         """
 
         global_config_path = "/mock/home/folder/.streamlit/config.toml"
@@ -690,14 +696,14 @@ class ConfigLoadingTest(unittest.TestCase):
         with open_patch, makedirs_patch, pathexists_patch:
             config.get_config_options()
 
-            # s3.bucket set in both local and global
-            self.assertEqual("local_bucket", config.get_option("s3.bucket"))
+            # theme.base set in both local and global
+            self.assertEqual("light", config.get_option("theme.base"))
 
-            # s3.url is set in global, and not in local
-            self.assertEqual("global_url", config.get_option("s3.url"))
+            # theme.font is set in global, and not in local
+            self.assertEqual("sans serif", config.get_option("theme.font"))
 
-            # s3.accessKeyId is set in local and not in global
-            self.assertEqual("local_accessKeyId", config.get_option("s3.accessKeyId"))
+            # theme.textColor is set in local and not in global
+            self.assertEqual("#FFFFFF", config.get_option("theme.textColor"))
 
     def test_load_global_local_flag_config(self):
         """Test that CLI flags have higher priority than both
@@ -705,15 +711,16 @@ class ConfigLoadingTest(unittest.TestCase):
         """
 
         global_config = """
-        [s3]
-        bucket = "global_bucket"
-        url = "global_url"
+        [theme]
+        base = "dark"
+        font = "sans serif"
+        textColor = "#FFFFFF"
         """
 
         local_config = """
-        [s3]
-        bucket = "local_bucket"
-        accessKeyId = "local_accessKeyId"
+        [theme]
+        base = "light"
+        font = "serif"
         """
 
         global_config_path = "/mock/home/folder/.streamlit/config.toml"
@@ -735,16 +742,17 @@ class ConfigLoadingTest(unittest.TestCase):
         ]
 
         with open_patch, makedirs_patch, pathexists_patch:
-            config.get_config_options(
-                options_from_flags={"s3.accessKeyId": "flag_accessKeyId"}
-            )
+            config.get_config_options(options_from_flags={"theme.font": "monospace"})
 
-            self.assertEqual("local_bucket", config.get_option("s3.bucket"))
-            self.assertEqual("global_url", config.get_option("s3.url"))
-            self.assertEqual("flag_accessKeyId", config.get_option("s3.accessKeyId"))
+            self.assertEqual("light", config.get_option("theme.base"))
+            self.assertEqual("#FFFFFF", config.get_option("theme.textColor"))
+            self.assertEqual("monospace", config.get_option("theme.font"))
 
     def test_upload_file_default_values(self):
         self.assertEqual(200, config.get_option("server.maxUploadSize"))
+
+    def test_max_message_size_default_values(self):
+        self.assertEqual(200, config.get_option("server.maxMessageSize"))
 
     def test_config_options_removed_on_reparse(self):
         """Test that config options that are removed in a file are also removed
@@ -757,29 +765,29 @@ class ConfigLoadingTest(unittest.TestCase):
         pathexists_patch.side_effect = lambda path: path == global_config_path
 
         global_config = """
-        [s3]
-        bucket = "bucket"
-        accessKeyId = "accessKeyId"
+        [theme]
+        base = "dark"
+        font = "sans serif"
         """
         open_patch = patch("streamlit.config.open", mock_open(read_data=global_config))
 
         with open_patch, makedirs_patch, pathexists_patch:
             config.get_config_options()
 
-            self.assertEqual("bucket", config.get_option("s3.bucket"))
-            self.assertEqual("accessKeyId", config.get_option("s3.accessKeyId"))
+            self.assertEqual("dark", config.get_option("theme.base"))
+            self.assertEqual("sans serif", config.get_option("theme.font"))
 
         global_config = """
-        [s3]
-        accessKeyId = "accessKeyId"
+        [theme]
+        base = "dark"
         """
         open_patch = patch("streamlit.config.open", mock_open(read_data=global_config))
 
         with open_patch, makedirs_patch, pathexists_patch:
             config.get_config_options(force_reparse=True)
 
-            self.assertEqual(None, config.get_option("s3.bucket"))
-            self.assertEqual("accessKeyId", config.get_option("s3.accessKeyId"))
+            self.assertEqual("dark", config.get_option("theme.base"))
+            self.assertEqual(None, config.get_option("theme.font"))
 
     @patch("streamlit.logger.get_logger")
     def test_config_options_warn_on_server_change(self, get_logger):

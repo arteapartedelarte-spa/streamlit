@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-# Copyright 2018-2021 Streamlit Inc.
+
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,21 +23,18 @@ with a non-zero status.
 """
 
 import os
-from multiprocessing.pool import ThreadPool
-from multiprocessing import Lock
 import subprocess
 import sys
+from multiprocessing import Lock
+from multiprocessing.pool import ThreadPool
 from typing import Set
 
 import click
-import matplotlib
-
-IS_PYTHON_3_6 = sys.version_info[:2] == (3, 6)
 
 # Where we expect to find the example files.
 E2E_DIR = "e2e/scripts"
 
-EXCLUDED_FILENAMES = set()  # type: Set[str]
+EXCLUDED_FILENAMES: Set[str] = set()
 
 # st_experimental_rerun.py calls st.experimental_rerun which raises a
 # RerunException when called within plain Python.
@@ -46,10 +44,6 @@ EXCLUDED_FILENAMES.add("st_experimental_rerun.py")
 # and fixing Matplotlib in these tests), we set the MPL backend to something
 # that doesn't require a display.
 os.environ["MPLBACKEND"] = "Agg"
-
-# magic.py uses contextlib.asynccontextmanager, which is Python 3.7+
-if IS_PYTHON_3_6:
-    EXCLUDED_FILENAMES.add("st_magic.py")
 
 
 def _command_to_string(command):

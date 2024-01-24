@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,26 +17,19 @@ import os
 import unittest
 from typing import Any
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-import tornado.testing
-import tornado.web
 
-from streamlit import StreamlitAPIException
-from streamlit.components.v1.components import ComponentRegistry
-from streamlit.components.v1.components import ComponentRequestHandler
-from streamlit.components.v1.components import CustomComponent
-from streamlit.components.v1.components import declare_component
-import streamlit.components.v1 as components
-from streamlit.elements import arrow_table
-from streamlit.errors import DuplicateWidgetID
-from streamlit.proto.ComponentInstance_pb2 import SpecialArg
-from streamlit.type_util import to_bytes
-from tests import testutil
-from tests.testutil import DeltaGeneratorTestCase
 import streamlit as st
+import streamlit.components.v1 as components
+from streamlit.components.v1 import component_arrow
+from streamlit.components.v1.components import ComponentRegistry, CustomComponent
+from streamlit.errors import DuplicateWidgetID, StreamlitAPIException
+from streamlit.proto.Components_pb2 import SpecialArg
+from streamlit.type_util import to_bytes
+from tests.delta_generator_test_case import DeltaGeneratorTestCase
 
 URL = "http://not.a.real.url:3001"
 PATH = "not/a/real/path"
@@ -45,7 +38,7 @@ PATH = "not/a/real/path"
 def _serialize_dataframe_arg(key: str, value: Any) -> SpecialArg:
     special_arg = SpecialArg()
     special_arg.key = key
-    arrow_table.marshall(special_arg.arrow_dataframe.data, value)
+    component_arrow.marshall(special_arg.arrow_dataframe.data, value)
     return special_arg
 
 
@@ -66,31 +59,33 @@ class DeclareComponentTest(unittest.TestCase):
         """Test component name generation"""
         # Test a component defined in a module with no package
         component = components.declare_component("foo", url=URL)
-        self.assertEqual("components_test.foo", component.name)
+        self.assertEqual("tests.streamlit.components_test.foo", component.name)
 
         # Test a component defined in __init__.py
-        from component_test_data import component as init_component
+        from tests.streamlit.component_test_data import component as init_component
 
         self.assertEqual(
-            "component_test_data.foo",
+            "tests.streamlit.component_test_data.foo",
             init_component.name,
         )
 
         # Test a component defined in a module within a package
-        from component_test_data.outer_module import component as outer_module_component
+        from tests.streamlit.component_test_data.outer_module import (
+            component as outer_module_component,
+        )
 
         self.assertEqual(
-            "component_test_data.outer_module.foo",
+            "tests.streamlit.component_test_data.outer_module.foo",
             outer_module_component.name,
         )
 
         # Test a component defined in module within a nested package
-        from component_test_data.nested.inner_module import (
+        from tests.streamlit.component_test_data.nested.inner_module import (
             component as inner_module_component,
         )
 
         self.assertEqual(
-            "component_test_data.nested.inner_module.foo",
+            "tests.streamlit.component_test_data.nested.inner_module.foo",
             inner_module_component.name,
         )
 
@@ -188,7 +183,7 @@ class ComponentRegistryTest(unittest.TestCase):
         registry = ComponentRegistry.instance()
         with self.assertRaises(StreamlitAPIException) as ctx:
             registry.register_component(CustomComponent("test_component", test_path))
-            self.assertIn("No such component directory", ctx.exception)
+        self.assertIn("No such component directory", str(ctx.exception))
 
     def test_register_duplicate_path(self):
         """It's not an error to re-register a component.
@@ -322,6 +317,61 @@ class InvokeComponentTest(DeltaGeneratorTestCase):
         proto = self.get_delta_from_queue().new_element.component_instance
         self.assertJSONEqual({"key": None, "default": None}, proto.json_args)
 
+    def test_widget_id_with_key(self):
+        """UNLIKE OTHER WIDGET TYPES, a component with a user-supplied `key` will have a stable widget ID
+        even when the component's other parameters change.
+
+        This is important because a component's iframe gets unmounted and remounted - wiping all its
+        internal state - when the component's ID changes. We want to be able to pass new data to a
+        component's frontend without causing a remount.
+        """
+
+        # Create a component instance with a key and some custom data
+        self.test_component(key="key", some_data=345)
+        proto1 = self.get_delta_from_queue().new_element.component_instance
+        self.assertJSONEqual(
+            {"key": "key", "default": None, "some_data": 345}, proto1.json_args
+        )
+
+        # Clear some ScriptRunCtx data so that we can re-register the same component
+        # without getting a DuplicateWidgetID error
+        self.script_run_ctx.widget_user_keys_this_run.clear()
+        self.script_run_ctx.widget_ids_this_run.clear()
+
+        # Create a second component instance with the same key, and different custom data
+        self.test_component(key="key", some_data=678, more_data="foo")
+        proto2 = self.get_delta_from_queue().new_element.component_instance
+        self.assertJSONEqual(
+            {"key": "key", "default": None, "some_data": 678, "more_data": "foo"},
+            proto2.json_args,
+        )
+
+        # The two component instances should have the same ID, *despite having different
+        # data passed to them.*
+        self.assertEqual(proto1.id, proto2.id)
+
+    def test_widget_id_without_key(self):
+        """Like all other widget types, two component instances with different data parameters,
+        and without a specified `key`, will have different widget IDs.
+        """
+
+        # Create a component instance without a key and some custom data
+        self.test_component(some_data=345)
+        proto1 = self.get_delta_from_queue().new_element.component_instance
+        self.assertJSONEqual(
+            {"key": None, "default": None, "some_data": 345}, proto1.json_args
+        )
+
+        # Create a second component instance with different custom data
+        self.test_component(some_data=678)
+        proto2 = self.get_delta_from_queue().new_element.component_instance
+        self.assertJSONEqual(
+            {"key": None, "default": None, "some_data": 678}, proto2.json_args
+        )
+
+        # The two component instances should have different IDs (just like any other widget would).
+        self.assertNotEqual(proto1.id, proto2.id)
+
     def test_simple_default(self):
         """Test the 'default' param with a JSON value."""
         return_value = self.test_component(default="baz")
@@ -378,7 +428,7 @@ class InvokeComponentTest(DeltaGeneratorTestCase):
         proto = self.get_delta_from_queue().new_element.component_instance
         self.assertEqual(proto.form_id, "")
 
-    @patch("streamlit._is_running_with_streamlit", new=True)
+    @patch("streamlit.runtime.Runtime.exists", MagicMock(return_value=True))
     def test_inside_form(self):
         """Test that form id is marshalled correctly inside of a form."""
 
@@ -395,105 +445,7 @@ class InvokeComponentTest(DeltaGeneratorTestCase):
         self.assertEqual(component_instance_proto.form_id, form_proto.form.form_id)
 
 
-class ComponentRequestHandlerTest(tornado.testing.AsyncHTTPTestCase):
-    """Test /component endpoint."""
-
-    def tearDown(self) -> None:
-        ComponentRegistry._instance = None
-
-    def get_app(self):
-        self.registry = ComponentRegistry()
-        return tornado.web.Application(
-            [
-                (
-                    "/component/(.*)",
-                    ComponentRequestHandler,
-                    dict(registry=self.registry.instance()),
-                )
-            ]
-        )
-
-    def _request_component(self, path):
-        return self.fetch("/component/%s" % path, method="GET")
-
-    def test_success_request(self):
-        """Test request success when valid parameters are provided."""
-
-        with mock.patch("streamlit.components.v1.components.os.path.isdir"):
-            # We don't need the return value in this case.
-            declare_component("test", path=PATH)
-
-        with mock.patch(
-            "streamlit.components.v1.components.open",
-            mock.mock_open(read_data="Test Content"),
-        ):
-            response = self._request_component("components_test.test")
-
-        self.assertEqual(200, response.code)
-        self.assertEqual(b"Test Content", response.body)
-
-    def test_invalid_component_request(self):
-        """Test request failure when invalid component name is provided."""
-
-        response = self._request_component("invalid_component")
-        self.assertEqual(404, response.code)
-        self.assertEqual(b"not found", response.body)
-
-    def test_invalid_content_request(self):
-        """Test request failure when invalid content (file) is provided."""
-
-        with mock.patch("streamlit.components.v1.components.os.path.isdir"):
-            declare_component("test", path=PATH)
-
-        with mock.patch("streamlit.components.v1.components.open") as m:
-            m.side_effect = OSError("Invalid content")
-            response = self._request_component("components_test.test")
-
-        self.assertEqual(404, response.code)
-        self.assertEqual(
-            b"read error",
-            response.body,
-        )
-
-    def test_support_binary_files_request(self):
-        """Test support for binary files reads."""
-
-        def _open_read(m, payload):
-            is_binary = False
-            args, kwargs = m.call_args
-            if len(args) > 1:
-                if "b" in args[1]:
-                    is_binary = True
-            encoding = "utf-8"
-            if "encoding" in kwargs:
-                encoding = kwargs["encoding"]
-
-            if is_binary:
-                from io import BytesIO
-
-                return BytesIO(payload)
-            else:
-                from io import TextIOWrapper
-
-                return TextIOWrapper(str(payload, encoding=encoding))
-
-        with mock.patch("streamlit.components.v1.components.os.path.isdir"):
-            declare_component("test", path=PATH)
-
-        payload = b"\x00\x01\x00\x00\x00\x0D\x00\x80"  # binary non utf-8 payload
-
-        with mock.patch("streamlit.components.v1.components.open") as m:
-            m.return_value.__enter__ = lambda _: _open_read(m, payload)
-            response = self._request_component("components_test.test")
-
-        self.assertEqual(200, response.code)
-        self.assertEqual(
-            payload,
-            response.body,
-        )
-
-
-class IFrameTest(testutil.DeltaGeneratorTestCase):
+class IFrameTest(DeltaGeneratorTestCase):
     def test_iframe(self):
         """Test components.iframe"""
         components.iframe("http://not.a.url", width=200, scrolling=True)

@@ -1,10 +1,10 @@
-# Copyright 2018-2021 Streamlit Inc.
+# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,10 +15,10 @@
 import textwrap
 
 import matplotlib.pyplot as plt
-import seaborn as sns
-import streamlit as st
 import numpy as np
+import seaborn as sns
 
+import streamlit as st
 
 # Plot labels
 title = "An Extremely and Really Really Long Long Long Title"
@@ -28,9 +28,10 @@ yLabel = "Very long long y label"
 # Generate data
 n = 200
 np.random.seed(1234)
-xData = np.random.randn(n, 1) * 30 + 30
-yData = np.random.randn(n, 1) * 30
-data = np.random.randn(n, 2)
+
+xData: "np.typing.NDArray[np.float_]" = (np.random.randn(n, 1) * 30) + 30
+yData: "np.typing.NDArray[np.float_]" = np.random.randn(n, 1) * 30
+data: "np.typing.NDArray[np.float_]" = np.random.randn(n, 2)
 
 # Generate plot
 fig, ax = plt.subplots(figsize=(4.5, 4.5))
@@ -61,6 +62,6 @@ kwargs = {
 
 # st.pyplot with kwargs
 x = st.info("Loading...")
-x.pyplot(fig, **kwargs)
+x.pyplot(fig, **kwargs)  # type: ignore[arg-type]
 
 st.success("Done!")

@@ -1,12 +1,11 @@
 /**
- * @license
- * Copyright 2018-2021 Streamlit Inc.
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,10 +16,13 @@
 
 describe("st.sidebar", () => {
   before(() => {
-    cy.visit("http://localhost:3000/");
+    cy.loadApp("http://localhost:3000/");
 
-    // Make the ribbon decoration line disappear
-    cy.get("[data-testid='stDecoration']").invoke("css", "display", "none");
+    cy.prepForElementSnapshots();
+  });
+
+  it("displays sidebar correctly", () => {
+    cy.get("[data-testid='stSidebar']").matchThemedSnapshots("sidebar");
   });
 
   it("handles z-index of date input popover", () => {
@@ -63,9 +65,7 @@ describe("st.sidebar", () => {
   it("does not collapse on text input on mobile", () => {
     cy.viewport(400, 800);
     // Expand the sidebar on mobile, with a manual click
-    cy.get("[data-testid='stSidebar'] button")
-      .eq(1)
-      .click();
+    cy.get("[data-testid='collapsedControl'] button").click();
 
     cy.get("[data-testid='stSidebar'] .stTextInput input").click();
 

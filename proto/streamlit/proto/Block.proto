@@ -1,20 +1,23 @@
-/**
- * Copyright 2018-2021 Streamlit Inc.
+/**!
+ * Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022-2024)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
+ */
 
 syntax = "proto3";
+
+option java_package = "com.snowflake.apps.streamlit";
+option java_outer_classname = "BlockProto";
 
 message Block {
   oneof type {
@@ -23,28 +26,58 @@ message Block {
     Column column = 3;
     Expandable expandable = 4;
     Form form = 5;
+    TabContainer tab_container = 6;
+    Tab tab = 7;
+    ChatMessage chat_message = 9;
   }
 
-  bool allow_empty = 6;
+  bool allow_empty = 8;
 
   message Vertical {
+    bool border = 1;
+    // Height of the container, activates scrolling
+    uint32 height = 2;
   }
 
   message Horizontal {
-    double total_weight = 2;
+    string gap = 1;
   }
 
   message Column {
     double weight = 1;
+    string gap = 2;
   }
 
   message Expandable {
     string label = 1;
-    bool expanded = 2;
+    optional bool expanded = 2;
+    string icon = 3;
   }
 
   message Form {
     string form_id = 1;
     bool clear_on_submit = 2;
+    bool border = 3;
   }
+
+  message TabContainer {
+  }
+
+  message Tab {
+    string label = 1;
+  }
+
+  message ChatMessage {
+    enum AvatarType {
+      IMAGE = 0;
+      EMOJI = 1;
+      ICON = 2;
+    }
+
+    string name = 1;
+    string avatar = 2;
+    AvatarType avatar_type = 3;
+  }
+
+  // Next ID: 10
 }
